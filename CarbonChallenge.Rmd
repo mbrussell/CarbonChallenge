@@ -1,0 +1,108 @@
+---
+title: "Carbon challenge calculations"
+author: "Matt Russell"
+date: "4/27/2020"
+output: html_document
+---
+
+The following is a document to perform calculations for the University of Minnesota Extension's Tree and Woodland Carbon Capture Challenge. The general approach is to (1) input tree and woodland diameter measurements (2) calculate the aboveground biomass of each tree, and (3) calculate the carbon content in the tree or woodland. 
+
+```{r}
+library(tidyverse)
+```
+
+Here's some test data explained in the [Google Doc instructions](https://docs.google.com/document/d/1-4J-NvyEF7Y-0F6aeuXYBtGkY5y8Cu7sZ0k9lvjON4o/edit#heading=h.n8brrdl98b58).
+
+Example for a single tree:
+
+```{r}
+tree <- tribble(
+  ~SPGRP_JENKINS, ~TIME, ~DIA,
+  "Maple/oak/hickory/beech", "BEFORE", 10.5,
+  "Maple/oak/hickory/beech", "AFTER", 11.2
+  
+)
+```
+
+The Jenkins et al. 2003 paper describes a set of species-specific equations to estimate aboveground biomass in trees. The calculation relies on species and diameter at breast height (inches) and calculates biomass in pounds: [http://www.fs.fed.us/ne/durham/4104/papers/Heathbiomass_eqns.pdf](http://www.fs.fed.us/ne/durham/4104/papers/Heathbiomass_eqns.pdf)  
+
+```{r}
+# Here is the function:
+
+total_AGB<-function(SPGRP_JENKINS,DIA){
+if(SPGRP_JENKINS=='Aspen')
+  {JENKINS_TOTAL_B1=-2.2094; JENKINS_TOTAL_B2=2.3867}
+if(SPGRP_JENKINS=='Cedar/larch')	
+  {JENKINS_TOTAL_B1=-2.0336; JENKINS_TOTAL_B2=2.2592}
+if(SPGRP_JENKINS=='Maple/oak/hickory/beech')	
+  {JENKINS_TOTAL_B1=-2.0127; JENKINS_TOTAL_B2=2.4342}
+if(SPGRP_JENKINS=='Mixed hardwood')	
+  {JENKINS_TOTAL_B1=-2.48; JENKINS_TOTAL_B2=2.4835}
+if(SPGRP_JENKINS=='Pine')	
+  {JENKINS_TOTAL_B1=-2.5356; JENKINS_TOTAL_B2=2.4349}
+if(SPGRP_JENKINS=='Soft maple/birch')	
+  {JENKINS_TOTAL_B1=-1.9123; JENKINS_TOTAL_B2=2.3651}
+if(SPGRP_JENKINS=='Spruce')	
+  {JENKINS_TOTAL_B1=-2.0773; JENKINS_TOTAL_B2=2.3323}
+if(SPGRP_JENKINS=='True fir/hemlock') 	
+  {JENKINS_TOTAL_B1=-2.5384; JENKINS_TOTAL_B2=2.4814}
+  # Calculate total aboveground biomass of each tree (AGB)
+  # Note the equation predicts biomass in kg, but we  convert it into pounds 
+  AGB=(exp(JENKINS_TOTAL_B1+JENKINS_TOTAL_B2*log(DIA*2.54)))*2.20462
+    return(AGB=AGB)}
+```
+
+Now, we can apply the function total_AGB to estimate total aboveground biomass and add it as a column in our tree dataset. Then, we'll calculate the carbon content, assuming half of biomass is carbon: 
+
+```{r}
+tree$AGB<-mapply(total_AGB,SPGRP_JENKINS=tree$SPGRP_JENKINS,DIA=tree$DIA)
+tree$C<-tree$AGB*0.5
+
+# Calculate CO2 equivalents
+tree$CO2e <- tree$C * 3.667
+
+tree
+```
+
+
+Here is some example data from a woodland:
+
+```{r}
+wood <- tribble(
+  ~SPGRP_JENKINS, ~TIME, ~DIA,
+  "Maple/oak/hickory/beech", "BEFORE", 6.7,
+  "Maple/oak/hickory/beech", "BEFORE", 7.7,
+  "Pine", "BEFORE", 8.9,
+  "Maple/oak/hickory/beech", "BEFORE", 5.9,
+  "Maple/oak/hickory/beech", "BEFORE", 8.9,
+  "Pine", "BEFORE", 10.3,
+  "Pine", "BEFORE", 11.5,
+  "Maple/oak/hickory/beech", "BEFORE", 8.8,
+  "Maple/oak/hickory/beech", "AFTER", 7.0,
+  "Maple/oak/hickory/beech", "AFTER", 7.8,
+  "Pine", "AFTER", 9.5,
+  "Maple/oak/hickory/beech", "AFTER", 6.2,
+  "Maple/oak/hickory/beech", "AFTER", 9.4,
+  "Pine", "AFTER", 10.3,
+  "Pine", "AFTER", 11.7,
+  "Maple/oak/hickory/beech", "AFTER", 8.9
+)
+```
+
+Remember, participants are measuring 1/10th acre plots. We'll expand to this value in the calculation.
+
+```{r}
+PLOT_SIZE = 10
+
+wood$AGB<-mapply(total_AGB,SPGRP_JENKINS=wood$SPGRP_JENKINS,DIA=wood$DIA)
+wood$C<-wood$AGB*0.5
+
+wood$C_sum<-wood$C*PLOT_SIZE
+
+wood_grouped <- group_by(wood, TIME)
+
+plot.C <- summarize(wood_grouped, 
+  CPA = sum(C_sum))
+plot.C$CO2e <- plot.C$CPA * 3.667
+plot.C
+```
