@@ -2,20 +2,29 @@
 title: "Carbon challenge calculations"
 author: "Matt Russell"
 date: "4/27/2020"
-output: html_document
+output:
+  word_document: default
+  html_document: default
+  
+always_allow_html: yes
 ---
 
 The following is a document to perform calculations for the University of Minnesota Extension's Tree and Woodland Carbon Capture Challenge. The general approach is to (1) input tree and woodland diameter measurements (2) calculate the aboveground biomass of each tree, and (3) calculate the carbon content in the tree or woodland. 
 
-```{r}
+```{r, echo = F,  message=FALSE, warning=F}
 library(tidyverse)
+library(googlesheets4)
+library(knitr)
+library(formattable)
+library(kableExtra)
+options(kableExtra.auto_format = FALSE)
 ```
 
 Here's some test data explained in the [Google Doc instructions](https://docs.google.com/document/d/1-4J-NvyEF7Y-0F6aeuXYBtGkY5y8Cu7sZ0k9lvjON4o/edit#heading=h.n8brrdl98b58).
 
 Example for a single tree:
 
-```{r}
+```{r, echo = F}
 tree <- tribble(
   ~SPGRP_JENKINS, ~TIME, ~DIA,
   "Maple/oak/hickory/beech", "BEFORE", 10.5,
@@ -26,7 +35,7 @@ tree <- tribble(
 
 The Jenkins et al. 2003 paper describes a set of species-specific equations to estimate aboveground biomass in trees. The calculation relies on species and diameter at breast height (inches) and calculates biomass in pounds: [http://www.fs.fed.us/ne/durham/4104/papers/Heathbiomass_eqns.pdf](http://www.fs.fed.us/ne/durham/4104/papers/Heathbiomass_eqns.pdf)  
 
-```{r}
+```{r, echo = F}
 # Here is the function:
 
 total_AGB<-function(SPGRP_JENKINS,DIA){
@@ -54,7 +63,7 @@ if(SPGRP_JENKINS=='True fir/hemlock')
 
 Now, we can apply the function total_AGB to estimate total aboveground biomass and add it as a column in our tree dataset. Then, we'll calculate the carbon content, assuming half of biomass is carbon: 
 
-```{r}
+```{r, echo = F}
 tree$AGB<-mapply(total_AGB,SPGRP_JENKINS=tree$SPGRP_JENKINS,DIA=tree$DIA)
 tree$C<-tree$AGB*0.5
 
@@ -64,10 +73,48 @@ tree$CO2e <- tree$C * 3.667
 tree
 ```
 
+## Load the pre-growing season measurements of the Carbon Capture Challenge
+
+```{r, echo = F}
+tree2020 <- read_sheet("https://docs.google.com/spreadsheets/d/1sjRe8pi08C4jY8TlDBeRKxmhqMlo85eB5wmqNovsiOU/edit?usp=sharing")
+
+tree2020$AGB<-mapply(total_AGB,SPGRP_JENKINS=tree2020$Spp2,DIA=tree2020$DBH2)
+tree2020$DBH2<-round(tree2020$DBH2, 1)
+tree2020$C<-round(tree2020$AGB*0.5, 0)
+
+# Calculate CO2 equivalents
+tree2020$CO2e <- tree2020$C * 3.667
+
+ tree2020 <- tree2020 %>% 
+      rename(`Team name` = Team,
+         Species = Spp,
+           `Tree diameter (inches)` = DBH2 ,
+           `Carbon in tree (pounds)` = C )
+
+ tree_show <- tree2020[, c(2,3,5,9,11)] %>% 
+  head(40) 
+tree_show %>% 
+       arrange(-`Carbon in tree (pounds)`) %>% 
+   kable("html", caption = 'Entries in the MN Carbon Capture Challenge (Single tree category).') %>%
+  kable_styling()
+
+p.tree <- ggplot(tree2020, aes(x = reorder(`Team name`, `Carbon in tree (pounds)`), y = `Carbon in tree (pounds)`)) +
+  geom_bar(stat =  "identity", fill="steelblue", col = "black") +
+  coord_flip() +
+  scale_y_continuous(limits = c(0,31000))+
+  labs(x = "Team name",
+       y = "Carbon stored in tree (pounds)") +
+    theme(panel.background = element_rect(fill = "NA"),
+        axis.line = element_line(color = "black"))
+p.tree
+
+ggsave(filename =  "C:\\Users\\russellm\\Documents\\Projects\\CarbonChallenge\\p.tree.png",
+       plot=p.tree, width=6, height=4,units="in",scale=1)
+```
 
 Here is some example data from a woodland:
 
-```{r}
+```{r, echo = F}
 wood <- tribble(
   ~SPGRP_JENKINS, ~TIME, ~DIA,
   "Maple/oak/hickory/beech", "BEFORE", 6.7,
@@ -91,7 +138,7 @@ wood <- tribble(
 
 Remember, participants are measuring 1/10th acre plots. We'll expand to this value in the calculation.
 
-```{r}
+```{r, echo = F}
 PLOT_SIZE = 10
 
 wood$AGB<-mapply(total_AGB,SPGRP_JENKINS=wood$SPGRP_JENKINS,DIA=wood$DIA)
@@ -105,4 +152,43 @@ plot.C <- summarize(wood_grouped,
   CPA = sum(C_sum))
 plot.C$CO2e <- plot.C$CPA * 3.667
 plot.C
+```
+
+
+```{r, echo = F}
+wood2020 <- read_sheet("https://docs.google.com/spreadsheets/d/1ekdnxAnmO0PfVAmA-aZ1j6lNdwNKMGz7WLK1vBttmtA/edit?usp=sharing")
+PLOT_SIZE = 10
+
+wood2020$AGB<-mapply(total_AGB, SPGRP_JENKINS=wood2020$Spp2, DIA=wood2020$DBH)
+wood2020$C<-wood2020$AGB*0.5
+
+wood2020$C_sum<-wood2020$C*PLOT_SIZE
+
+wood_grouped <- group_by(wood2020, Team, Meas)
+
+plot.C <- summarize(wood_grouped, 
+  CPA = sum(C_sum))
+plot.C$CO2e <- plot.C$CPA * 3.667
+plot.C$tons <- plot.C$CPA / 2000
+plot.C
+
+
+wood_grouped2 <- group_by(wood2020, Team, Spp)
+
+plot.C2 <- summarize(wood_grouped2, 
+  CPA = sum(C_sum))
+plot.C2
+
+p.wood <- ggplot(plot.C, aes(x = reorder(Team, tons), y = tons)) +
+  geom_bar(stat =  "identity", fill="darkgreen", col = "black") +
+  coord_flip() +
+  scale_y_continuous(limits = c(0,38))+
+  labs(x = "Team name",
+       y = "Carbon stored in woodland (tons per acre)") +
+    theme(panel.background = element_rect(fill = "NA"),
+        axis.line = element_line(color = "black"))
+p.wood
+
+ggsave(filename =  "C:\\Users\\russellm\\Documents\\Projects\\CarbonChallenge\\p.wood.png",
+       plot=p.wood, width=6, height=4,units="in",scale=1)
 ```
