@@ -1,0 +1,282 @@
+---
+title: "Carbon challenge calculations"
+author: "Matt Russell"
+date: "4/27/2020"
+output:
+  word_document: default
+  html_document: default
+  
+always_allow_html: yes
+---
+
+The following is a document to perform calculations for the University of Minnesota Extension's Tree and Woodland Carbon Capture Challenge. The general approach is to (1) input tree and woodland diameter measurements (2) calculate the aboveground biomass of each tree, and (3) calculate the carbon content in the tree or woodland. 
+
+```{r, echo = F,  message=FALSE, warning=F}
+library(tidyverse)
+library(googlesheets4)
+library(knitr)
+library(formattable)
+library(kableExtra)
+options(kableExtra.auto_format = FALSE)
+```
+
+Here's some test data explained in the [Google Doc instructions](https://docs.google.com/document/d/1-4J-NvyEF7Y-0F6aeuXYBtGkY5y8Cu7sZ0k9lvjON4o/edit#heading=h.n8brrdl98b58).
+
+Example for a single tree:
+
+```{r, echo = F}
+tree <- tribble(
+  ~SPGRP_JENKINS, ~TIME, ~DIA,
+  "Maple/oak/hickory/beech", "BEFORE", 10.5,
+  "Maple/oak/hickory/beech", "AFTER", 11.2
+)
+```
+
+The Jenkins et al. 2003 paper describes a set of species-specific equations to estimate aboveground biomass in trees. The calculation relies on species and diameter at breast height (inches) and calculates biomass in pounds: [http://www.fs.fed.us/ne/durham/4104/papers/Heathbiomass_eqns.pdf](http://www.fs.fed.us/ne/durham/4104/papers/Heathbiomass_eqns.pdf)  
+
+```{r, echo = F}
+# Here is the function:
+
+total_AGB<-function(SPGRP_JENKINS,DIA){
+if(SPGRP_JENKINS=='Aspen')
+  {JENKINS_TOTAL_B1=-2.2094; JENKINS_TOTAL_B2=2.3867}
+if(SPGRP_JENKINS=='Cedar/larch')	
+  {JENKINS_TOTAL_B1=-2.0336; JENKINS_TOTAL_B2=2.2592}
+if(SPGRP_JENKINS=='Maple/oak/hickory/beech')	
+  {JENKINS_TOTAL_B1=-2.0127; JENKINS_TOTAL_B2=2.4342}
+if(SPGRP_JENKINS=='Mixed hardwood')	
+  {JENKINS_TOTAL_B1=-2.48; JENKINS_TOTAL_B2=2.4835}
+if(SPGRP_JENKINS=='Pine')	
+  {JENKINS_TOTAL_B1=-2.5356; JENKINS_TOTAL_B2=2.4349}
+if(SPGRP_JENKINS=='Soft maple/birch')	
+  {JENKINS_TOTAL_B1=-1.9123; JENKINS_TOTAL_B2=2.3651}
+if(SPGRP_JENKINS=='Spruce')	
+  {JENKINS_TOTAL_B1=-2.0773; JENKINS_TOTAL_B2=2.3323}
+if(SPGRP_JENKINS=='True fir/hemlock') 	
+  {JENKINS_TOTAL_B1=-2.5384; JENKINS_TOTAL_B2=2.4814}
+  # Calculate total aboveground biomass of each tree (AGB)
+  # Note the equation predicts biomass in kg, but we  convert it into pounds 
+  AGB=(exp(JENKINS_TOTAL_B1+JENKINS_TOTAL_B2*log(DIA*2.54)))*2.20462
+    return(AGB=AGB)}
+```
+
+Now, we can apply the function total_AGB to estimate total aboveground biomass and add it as a column in our tree dataset. Then, we'll calculate the carbon content, assuming half of biomass is carbon: 
+
+```{r, echo = F}
+tree$AGB<-mapply(total_AGB,SPGRP_JENKINS=tree$SPGRP_JENKINS,DIA=tree$DIA)
+tree$C<-tree$AGB*0.5
+
+# Calculate CO2 equivalents
+tree$CO2e <- tree$C * 3.667
+
+tree
+```
+
+## Load the pre-growing season measurements of the Carbon Capture Challenge
+
+```{r, echo = F}
+tree2020 <- read_sheet("https://docs.google.com/spreadsheets/d/1sjRe8pi08C4jY8TlDBeRKxmhqMlo85eB5wmqNovsiOU/edit?usp=sharing")
+
+tree2020$AGB1<-mapply(total_AGB,SPGRP_JENKINS=tree2020$Spp2,DIA=tree2020$DBH1)
+tree2020$DBH1<-round(tree2020$DBH1, 1)
+tree2020$C1<-round(tree2020$AGB1*0.5, 0)
+
+tree2020$AGB2<-mapply(total_AGB,SPGRP_JENKINS=tree2020$Spp2,DIA=tree2020$DBH2)
+tree2020$DBH2<-round(tree2020$DBH2, 1)
+tree2020$C2<-round(tree2020$AGB2*0.5, 0)
+tree2020$dC<-tree2020$C2-tree2020$C1
+
+
+# Calculate CO2 equivalents
+tree2020$CO2e1 <- tree2020$C1 * 3.667
+tree2020$CO2e2 <- tree2020$C2 * 3.667
+tree2020$dCO2e<-tree2020$CO2e2-tree2020$CO2e1
+
+ tree2020 <- tree2020 %>% 
+      rename(`Team name` = Team,
+         Species = Spp,
+           `Tree diameter, time 1 (inches)` = DBH1 ,
+           `Carbon in tree, time 1 (pounds)` = C1,
+         `Tree diameter, time 2 (inches)` = DBH2 ,
+           `Carbon in tree, time 2 (pounds)` = C2,
+         `Carbon sequestered (pounds)` = dC)
+
+ tree_show <- tree2020[, c(2,3,5,9,11,13,15,16)] %>% 
+  head(40)
+ tree_show
+tree_show %>% 
+       arrange(-`Carbon sequestered (pounds)`) %>% 
+   kable("html", caption = 'Entries in the MN Carbon Capture Challenge (Single tree category).') %>%
+  kable_styling()
+
+
+tree2020_2 <- tree2020 %>% 
+      rename(`Tree diameter  (inches)` = `Tree diameter, time 2 (inches)`,
+           `Carbon stored in tree (pounds)` = `Carbon in tree, time 2 (pounds)`,
+         `Carbon sequestered this year (pounds)` = `Carbon sequestered (pounds)`)
+
+tree_show2 <- tree2020_2[, c(2,3,5,11,15,16)] %>% 
+  head(40)
+tree_show2
+ 
+tree_show2 %>% 
+       arrange(-`Carbon sequestered this year (pounds)`) %>% 
+   kable("html", caption = 'Entries in the MN Carbon Capture Challenge (Single tree category).') %>%
+  kable_styling()
+
+
+p.tree1 <- ggplot(tree2020, aes(x = reorder(`Team name`, `Carbon in tree, time 1 (pounds)`), y = `Carbon in tree, time 1 (pounds)`)) +
+  geom_bar(stat =  "identity", fill="steelblue", col = "black") +
+  coord_flip() +
+  scale_y_continuous(limits = c(0,31000))+
+  labs(x = "Team name",
+       y = "Carbon stored in tree (pounds)") +
+    theme(panel.background = element_rect(fill = "NA"),
+        axis.line = element_line(color = "black"))
+p.tree1
+
+# ggsave(filename =  "C:\\Users\\russellm\\Documents\\Projects\\CarbonChallenge\\p.tree.png",
+#        plot=p.tree, width=6, height=4,units="in",scale=1)
+
+ tree2020 <- tree2020 %>% 
+     filter(!is.na(`Tree diameter, time 2 (inches)`)) 
+   
+tree2020_long <- tree2020 %>% 
+  select(`Team name`, `Carbon in tree, time 1 (pounds)`, `Carbon in tree, time 2 (pounds)`) %>% 
+  pivot_longer(!`Team name`, names_to = "Time", values_to = "Carbon")
+  
+Seasons <- c("Beginning of growing season \n(May 2020)","End of growing season \n(September 2020)")
+
+p.dC<- ggplot(tree2020_long, aes(x = Time, y = Carbon, group = `Team name`)) +
+  geom_point(col="steelblue", size = 2) +
+  geom_line()+
+  scale_x_discrete(labels= Seasons) +
+  labs(x = " ",
+       y = "Carbon stored in tree (pounds)",
+       title = "Single Tree Category") +
+    theme(panel.background = element_rect(fill = "NA"),
+        axis.line = element_line(color = "black"))
+p.dC
+
+ggsave(filename =  "C:\\Users\\russellm\\Documents\\Projects\\CarbonChallenge\\p.dc.png",
+       plot=p.dC, width=4, height=6,units="in",scale=1)
+```
+
+Here is some example data from a woodland:
+
+```{r, echo = F}
+wood <- tribble(
+  ~SPGRP_JENKINS, ~TIME, ~DIA,
+  "Maple/oak/hickory/beech", "BEFORE", 6.7,
+  "Maple/oak/hickory/beech", "BEFORE", 7.7,
+  "Pine", "BEFORE", 8.9,
+  "Maple/oak/hickory/beech", "BEFORE", 5.9,
+  "Maple/oak/hickory/beech", "BEFORE", 8.9,
+  "Pine", "BEFORE", 10.3,
+  "Pine", "BEFORE", 11.5,
+  "Maple/oak/hickory/beech", "BEFORE", 8.8,
+  "Maple/oak/hickory/beech", "AFTER", 7.0,
+  "Maple/oak/hickory/beech", "AFTER", 7.8,
+  "Pine", "AFTER", 9.5,
+  "Maple/oak/hickory/beech", "AFTER", 6.2,
+  "Maple/oak/hickory/beech", "AFTER", 9.4,
+  "Pine", "AFTER", 10.3,
+  "Pine", "AFTER", 11.7,
+  "Maple/oak/hickory/beech", "AFTER", 8.9
+)
+```
+
+Remember, participants are measuring 1/10th acre plots. We'll expand to this value in the calculation.
+
+```{r, echo = F}
+PLOT_SIZE = 10
+
+wood$AGB<-mapply(total_AGB,SPGRP_JENKINS=wood$SPGRP_JENKINS,DIA=wood$DIA)
+wood$C<-wood$AGB*0.5
+
+wood$C_sum<-wood$C*PLOT_SIZE
+
+wood_grouped <- group_by(wood, TIME)
+
+plot.C <- summarize(wood_grouped, 
+  CPA = sum(C_sum))
+plot.C$CO2e <- plot.C$CPA * 3.667
+plot.C
+```
+
+
+```{r, echo = F}
+wood2020 <- read_sheet("https://docs.google.com/spreadsheets/d/1ekdnxAnmO0PfVAmA-aZ1j6lNdwNKMGz7WLK1vBttmtA/edit?usp=sharing")
+PLOT_SIZE = 10
+
+wood2020$AGB1<-mapply(total_AGB, SPGRP_JENKINS=wood2020$Spp2, DIA=wood2020$DBH1)
+wood2020$C1<-wood2020$AGB1*0.5
+wood2020$C_sum1<-wood2020$C1*PLOT_SIZE
+
+wood2020$AGB2<-mapply(total_AGB, SPGRP_JENKINS=wood2020$Spp2, DIA=wood2020$DBH2)
+wood2020$C2<-wood2020$AGB2*0.5
+wood2020$C_sum2<-wood2020$C2*PLOT_SIZE
+
+plot.C <- wood2020 %>% 
+  group_by(Team) %>% 
+  summarize(CPA1 = sum(C_sum1),
+            CPA2 = sum(C_sum2))
+
+plot.C$CO2e1 <- plot.C$CPA1 * 3.667
+plot.C$tons1 <- plot.C$CPA1 / 2000
+
+plot.C$CO2e2 <- plot.C$CPA2 * 3.667
+plot.C$tons2 <- plot.C$CPA2 / 2000
+
+plot.C
+
+`%notin%` <- Negate(`%in%`)
+plot.C_long <- plot.C %>% 
+  pivot_longer(!`Team`, names_to = "Time", values_to = "Carbon") %>% 
+  filter(Time %in% c("tons1", "tons2"),
+         Team %notin% c("Sleeping Bear Tree Farm"))
+ 
+wood_show <- plot.C[, c(1, 5, 7)] 
+
+wood_show <- wood_show %>% 
+      rename(`Team name` = Team,
+           `Carbon in woods, time 1 (tons per acre)` = tons1,
+           `Carbon in woods, time 2 (tons per acre)` = tons2) %>% 
+  mutate(`Carbon sequestered (tons per acre)`= `Carbon in woods, time 2 (tons per acre)`-`Carbon in woods, time 1 (tons per acre)`)
+
+wood_show %>% 
+       filter(`Team name` %notin% c("Sleeping Bear Tree Farm")) %>% 
+       arrange(-`Carbon sequestered (tons per acre)`) %>% 
+   kable("html", caption = 'Entries in the MN Carbon Capture Challenge (Woodland category).') %>%
+  kable_styling()
+
+
+p.wood <- ggplot(plot.C, aes(x = reorder(Team, tons), y = tons)) +
+  geom_bar(stat =  "identity", fill="darkgreen", col = "black") +
+  coord_flip() +
+  scale_y_continuous(limits = c(0,38))+
+  labs(x = "Team name",
+       y = "Carbon stored in woodland (tons per acre)") +
+    theme(panel.background = element_rect(fill = "NA"),
+        axis.line = element_line(color = "black"))
+p.wood
+
+# ggsave(filename =  "C:\\Users\\russellm\\Documents\\Projects\\CarbonChallenge\\p.wood.png",
+#        plot=p.wood, width=6, height=4,units="in",scale=1)
+
+Seasons <- c("Beginning of growing season \n(May 2020)","End of growing season \n(September 2020)")
+
+p.dC.plot<- ggplot(plot.C_long, aes(x = Time, y = Carbon, group = `Team`)) +
+  geom_point(col="darkgreen", size = 2) +
+  geom_line()+
+  scale_x_discrete(labels= Seasons) +
+  labs(x = " ",
+       y = "Carbon stored in woodland (tons per acre)",
+       title = "Woodland Category") +
+    theme(panel.background = element_rect(fill = "NA"),
+        axis.line = element_line(color = "black"))
+p.dC.plot
+
+ggsave(filename =  "C:\\Users\\russellm\\Documents\\Projects\\CarbonChallenge\\p.dc.plot.png",
+       plot=p.dC.plot, width=4, height=6,units="in",scale=1)
+```
