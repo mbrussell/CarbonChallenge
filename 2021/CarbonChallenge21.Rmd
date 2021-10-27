@@ -103,7 +103,7 @@ tree2021$dCO2e<-tree2021$CO2e2-tree2021$CO2e1
            `Carbon in tree, time 2 (pounds)` = C2,
          `Carbon sequestered (pounds)` = dC)
 
- tree_show <- tree2021[, c(2,3,5,9,11,13,15,16)] %>% 
+ tree_show <- tree2021[, c(3,6,10,12,14,16,17)] %>% 
   head(40)
  tree_show
 tree_show %>% 
@@ -117,7 +117,7 @@ tree2021_2 <- tree2021 %>%
            `Carbon stored in tree (pounds)` = `Carbon in tree, time 2 (pounds)`,
          `Carbon sequestered this year (pounds)` = `Carbon sequestered (pounds)`)
 
-tree_show2 <- tree2021_2[, c(2,3,5,11,15,16)] %>% 
+tree_show2 <- tree2021_2[, c(3,6,10,12,14,16,17)] %>% 
   head(40)
 tree_show2
  
@@ -147,7 +147,7 @@ tree2021_long <- tree2021 %>%
   select(`Team name`, `Carbon in tree, time 1 (pounds)`, `Carbon in tree, time 2 (pounds)`) %>% 
   pivot_longer(!`Team name`, names_to = "Time", values_to = "Carbon")
   
-Seasons <- c("Beginning of growing season \n(May 2020)","End of growing season \n(September 2020)")
+Seasons <- c("Beginning of growing season \n(May 2021)","End of growing season \n(September 2021)")
 
 p.dC<- ggplot(tree2021_long, aes(x = Time, y = Carbon, group = `Team name`)) +
   geom_point(col="steelblue", size = 2) +
@@ -160,7 +160,7 @@ p.dC<- ggplot(tree2021_long, aes(x = Time, y = Carbon, group = `Team name`)) +
         axis.line = element_line(color = "black"))
 p.dC
 
-ggsave(filename =  "C:\\Users\\russellm\\Documents\\Projects\\CarbonChallenge\\p.dc.png",
+ggsave(filename =  "C:\\Users\\russellm\\Documents\\Projects\\CarbonChallenge\\2021\\p.dc.png",
        plot=p.dC, width=4, height=6,units="in",scale=1)
 ```
 
